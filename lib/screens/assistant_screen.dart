@@ -304,7 +304,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
                       ],
 
                       // Confirmation / Execution Status
-                      if (action.requiresConfirmation && !action.isConfirmed) ...[
+                      if (action.requiresConfirmation && !action.isConfirmed && action.executionStatus != 'cancelled') ...[
                         const SizedBox(height: 12),
                         Row(
                           children: [
@@ -318,7 +318,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
                             ),
                             const SizedBox(width: 8),
                             TextButton(
-                              onPressed: () {},
+                              onPressed: () => provider.cancelAssistantAction(action),
                               child: const Text('Cancel'),
                             ),
                           ],

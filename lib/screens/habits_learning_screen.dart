@@ -87,7 +87,7 @@ class _HabitsLearningScreenState extends State<HabitsLearningScreen> with Single
 
                 final habit = Habit(
                   id: _uuid.v4(),
-                  userId: provider.profile?.id ?? 'local-user-001',
+                  userId: provider.profile!.id,
                   name: name,
                   description: descController.text.trim().isEmpty ? null : descController.text.trim(),
                   frequencyTargetDaysPerWeek: freqDays,
@@ -185,7 +185,7 @@ class _HabitsLearningScreenState extends State<HabitsLearningScreen> with Single
 
               final session = LearningSession(
                 id: _uuid.v4(),
-                userId: provider.profile?.id ?? 'local-user-001',
+                userId: provider.profile!.id,
                 projectId: selectedProjectId,
                 topic: topic,
                 resources: resourcesController.text.trim().isEmpty ? null : resourcesController.text.trim(),

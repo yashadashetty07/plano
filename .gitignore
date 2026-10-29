@@ -1,7 +1,10 @@
 # Environment Secrets
-.env
-.env.local
-.env.*.local
+# Local environment/configuration files (never commit credentials).
+.env*
+!.env.example
+config/supabase.dev.json
+supabase/.env
+supabase/functions/.env
 
 # Miscellaneous
 *.class

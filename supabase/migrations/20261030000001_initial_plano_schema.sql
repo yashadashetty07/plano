@@ -16,12 +16,15 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "profiles_select_own" ON public.profiles;
 CREATE POLICY "profiles_select_own" ON public.profiles
     FOR SELECT USING (auth.uid() = id);
 
+DROP POLICY IF EXISTS "profiles_insert_own" ON public.profiles;
 CREATE POLICY "profiles_insert_own" ON public.profiles
     FOR INSERT WITH CHECK (auth.uid() = id);
 
+DROP POLICY IF EXISTS "profiles_update_own" ON public.profiles;
 CREATE POLICY "profiles_update_own" ON public.profiles
     FOR UPDATE USING (auth.uid() = id) WITH CHECK (auth.uid() = id);
 
@@ -48,25 +51,32 @@ CREATE TABLE IF NOT EXISTS public.workspace_members (
 
 ALTER TABLE public.workspace_members ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "workspaces_access" ON public.workspaces;
 CREATE POLICY "workspaces_access" ON public.workspaces
-    FOR ALL USING (
-        auth.uid() = owner_id OR
-        EXISTS (
-            SELECT 1 FROM public.workspace_members
-            WHERE workspace_members.workspace_id = workspaces.id
-            AND workspace_members.user_id = auth.uid()
-        )
-    );
+    FOR ALL USING (auth.uid() = owner_id)
+    WITH CHECK (auth.uid() = owner_id);
 
-CREATE POLICY "workspace_members_access" ON public.workspace_members
-    FOR ALL USING (
-        auth.uid() = user_id OR
-        EXISTS (
+DROP POLICY IF EXISTS "workspace_members_access" ON public.workspace_members;
+DROP POLICY IF EXISTS "workspace_members_select" ON public.workspace_members;
+DROP POLICY IF EXISTS "workspace_members_owner_manage" ON public.workspace_members;
+CREATE POLICY "workspace_members_select" ON public.workspace_members
+    FOR SELECT USING (
+        auth.uid() = user_id OR EXISTS (
             SELECT 1 FROM public.workspaces
             WHERE workspaces.id = workspace_members.workspace_id
-            AND workspaces.owner_id = auth.uid()
+              AND workspaces.owner_id = auth.uid()
         )
     );
+CREATE POLICY "workspace_members_owner_manage" ON public.workspace_members
+    FOR ALL USING (EXISTS (
+        SELECT 1 FROM public.workspaces
+        WHERE workspaces.id = workspace_members.workspace_id
+          AND workspaces.owner_id = auth.uid()
+    )) WITH CHECK (EXISTS (
+        SELECT 1 FROM public.workspaces
+        WHERE workspaces.id = workspace_members.workspace_id
+          AND workspaces.owner_id = auth.uid()
+    ));
 
 -- 3. PROJECTS
 CREATE TABLE IF NOT EXISTS public.projects (
@@ -86,6 +96,7 @@ CREATE TABLE IF NOT EXISTS public.projects (
 
 ALTER TABLE public.projects ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "projects_user_isolation" ON public.projects;
 CREATE POLICY "projects_user_isolation" ON public.projects
     FOR ALL USING (auth.uid() = user_id)
     WITH CHECK (auth.uid() = user_id);
@@ -115,9 +126,16 @@ CREATE TABLE IF NOT EXISTS public.tasks (
 
 ALTER TABLE public.tasks ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "tasks_user_isolation" ON public.tasks;
 CREATE POLICY "tasks_user_isolation" ON public.tasks
     FOR ALL USING (auth.uid() = user_id)
-    WITH CHECK (auth.uid() = user_id);
+    WITH CHECK (
+        auth.uid() = user_id AND
+        (project_id IS NULL OR EXISTS (
+            SELECT 1 FROM public.projects p
+            WHERE p.id = tasks.project_id AND p.user_id = auth.uid()
+        ))
+    );
 
 CREATE INDEX IF NOT EXISTS idx_tasks_user_status ON public.tasks(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_tasks_user_due_date ON public.tasks(user_id, due_date);
@@ -147,9 +165,20 @@ CREATE TABLE IF NOT EXISTS public.activity_logs (
 
 ALTER TABLE public.activity_logs ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "activity_logs_user_isolation" ON public.activity_logs;
 CREATE POLICY "activity_logs_user_isolation" ON public.activity_logs
     FOR ALL USING (auth.uid() = user_id)
-    WITH CHECK (auth.uid() = user_id);
+    WITH CHECK (
+        auth.uid() = user_id AND
+        (project_id IS NULL OR EXISTS (
+            SELECT 1 FROM public.projects p
+            WHERE p.id = activity_logs.project_id AND p.user_id = auth.uid()
+        )) AND
+        (task_id IS NULL OR EXISTS (
+            SELECT 1 FROM public.tasks t
+            WHERE t.id = activity_logs.task_id AND t.user_id = auth.uid()
+        ))
+    );
 
 CREATE INDEX IF NOT EXISTS idx_activity_logs_user_date ON public.activity_logs(user_id, date);
 CREATE INDEX IF NOT EXISTS idx_activity_logs_user_category ON public.activity_logs(user_id, category);
@@ -170,6 +199,7 @@ CREATE TABLE IF NOT EXISTS public.habits (
 
 ALTER TABLE public.habits ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "habits_user_isolation" ON public.habits;
 CREATE POLICY "habits_user_isolation" ON public.habits
     FOR ALL USING (auth.uid() = user_id)
     WITH CHECK (auth.uid() = user_id);
@@ -186,9 +216,15 @@ CREATE TABLE IF NOT EXISTS public.habit_checkins (
 
 ALTER TABLE public.habit_checkins ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "habit_checkins_user_isolation" ON public.habit_checkins;
 CREATE POLICY "habit_checkins_user_isolation" ON public.habit_checkins
     FOR ALL USING (auth.uid() = user_id)
-    WITH CHECK (auth.uid() = user_id);
+    WITH CHECK (
+        auth.uid() = user_id AND EXISTS (
+            SELECT 1 FROM public.habits h
+            WHERE h.id = habit_checkins.habit_id AND h.user_id = auth.uid()
+        )
+    );
 
 CREATE INDEX IF NOT EXISTS idx_habit_checkins_lookup ON public.habit_checkins(user_id, checkin_date);
 
@@ -209,9 +245,16 @@ CREATE TABLE IF NOT EXISTS public.learning_sessions (
 
 ALTER TABLE public.learning_sessions ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "learning_sessions_user_isolation" ON public.learning_sessions;
 CREATE POLICY "learning_sessions_user_isolation" ON public.learning_sessions
     FOR ALL USING (auth.uid() = user_id)
-    WITH CHECK (auth.uid() = user_id);
+    WITH CHECK (
+        auth.uid() = user_id AND
+        (project_id IS NULL OR EXISTS (
+            SELECT 1 FROM public.projects p
+            WHERE p.id = learning_sessions.project_id AND p.user_id = auth.uid()
+        ))
+    );
 
 CREATE INDEX IF NOT EXISTS idx_learning_sessions_user_date ON public.learning_sessions(user_id, session_date);
 
@@ -231,6 +274,7 @@ CREATE TABLE IF NOT EXISTS public.health_summaries (
 
 ALTER TABLE public.health_summaries ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "health_summaries_owner_only" ON public.health_summaries;
 CREATE POLICY "health_summaries_owner_only" ON public.health_summaries
     FOR ALL USING (auth.uid() = user_id)
     WITH CHECK (auth.uid() = user_id);
@@ -252,6 +296,7 @@ CREATE TABLE IF NOT EXISTS public.integration_connections (
 
 ALTER TABLE public.integration_connections ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "integration_connections_owner_only" ON public.integration_connections;
 CREATE POLICY "integration_connections_owner_only" ON public.integration_connections
     FOR ALL USING (auth.uid() = user_id)
     WITH CHECK (auth.uid() = user_id);
@@ -269,6 +314,7 @@ CREATE TABLE IF NOT EXISTS public.assistant_audit_logs (
 
 ALTER TABLE public.assistant_audit_logs ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "assistant_audit_logs_owner_only" ON public.assistant_audit_logs;
 CREATE POLICY "assistant_audit_logs_owner_only" ON public.assistant_audit_logs
     FOR ALL USING (auth.uid() = user_id)
     WITH CHECK (auth.uid() = user_id);
@@ -287,9 +333,14 @@ BEGIN
     
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
 
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users
     FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- The trigger runs through Supabase Auth. Do not expose its definer rights as
+-- an RPC callable by API roles.
+REVOKE ALL ON FUNCTION public.handle_new_user() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.handle_new_user() TO supabase_auth_admin;

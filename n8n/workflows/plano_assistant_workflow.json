@@ -6,63 +6,18 @@
         "httpMethod": "POST",
         "path": "plano-assistant",
         "responseMode": "responseNode",
-        "options": {}
+        "options": {},
+        "authentication": "headerAuth"
       },
       "id": "node-webhook",
-      "name": "Webhook: Receive Client Action",
+      "name": "Webhook: Receive Request",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [200, 300],
+      "position": [
+        200,
+        300
+      ],
       "webhookId": "plano-assistant"
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "string": [
-            {
-              "value1": "={{ $json.headers['x-plano-webhook-secret'] || $json.headers['X-Plano-Webhook-Secret'] }}",
-              "operation": "equal",
-              "value2": "={{ $env.PLANO_WEBHOOK_SECRET }}"
-            }
-          ]
-        }
-      },
-      "id": "node-auth-check",
-      "name": "Validate Secret",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [420, 300]
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "{\"error\": \"Unauthorized: Invalid or missing X-Plano-Webhook-Secret header.\"}",
-        "options": {
-          "responseCode": 401
-        }
-      },
-      "id": "node-reject-unauthorized",
-      "name": "Return 401 Unauthorized",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [660, 480]
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "boolean": [
-            {
-              "value1": "={{ Boolean($json.body.confirmedAction) }}",
-              "value2": true
-            }
-          ]
-        }
-      },
-      "id": "node-route-action",
-      "name": "Is Confirmed Mutation?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [660, 200]
     },
     {
       "parameters": {
@@ -75,44 +30,37 @@
       "name": "Groq Chat Model",
       "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
       "typeVersion": 1,
-      "position": [880, 380],
-      "credentials": {
-        "groqApi": {
-          "id": "plano-groq-credentials",
-          "name": "Groq Plano Production"
-        }
-      }
+      "position": [
+        880,
+        380
+      ]
     },
     {
       "parameters": {
         "promptType": "define",
-        "text": "=You are Plano Assistant, a typed structured parser for a personal productivity app.\nUser ID: {{ $json.body.userId }}\nUser Timezone: {{ $json.body.timezone }}\nUser Prompt: \"{{ $json.body.prompt }}\"\n\nRules:\n1. Never invent dates, durations, or completion status. If ambiguous, set intent to \"clarify_question\".\n2. Output strictly JSON with keys: intent, parameters, confidence, is_destructive, summary, requires_confirmation.\n3. Supported intents:\n   - \"log_activity\": { title, category, duration_minutes, date, notes }\n   - \"create_task\": { title, priority, due_date, category, estimated_minutes }\n   - \"checkin_habit\": { habit_name, checkin_date }\n   - \"query_summary\": { date_range, category_filter, topic }\n   - \"clarify_question\": { question, missing_fields }\n4. Never output markdown code fences (no ```json). Output pure raw JSON only."
+        "text": "=Parse the user's request into a single JSON object. Never execute database operations. Never invent dates, durations, names, or completion states. If a required detail is absent or ambiguous, return intent=\"clarify_question\" and ask one concise question. Return JSON only, without markdown. Schema: {\"intent\":\"log_activity|create_task|checkin_habit|query_summary|clarify_question\",\"parameters\":{},\"summary\":\"short preview\",\"clarification_question\":null}. For log_activity parameters require title, category (work|personal_project|learning|workout|habit|admin|creative|rest|custom), duration_minutes (integer), and date (YYYY-MM-DD); notes and timezone are optional. For create_task require title; priority (low|medium|high|urgent), due_date (YYYY-MM-DD or null), category and estimated_minutes are optional. For checkin_habit require exact habit_name and checkin_date (YYYY-MM-DD). For query_summary use only date_range, category_filter, topic. For clarification use parameters={} and clarification_question. User timezone: {{ $('Webhook: Receive Request').first().json.body.timezone }}. User request: {{ JSON.stringify($('Webhook: Receive Request').first().json.body.prompt) }}"
       },
       "id": "node-llm-chain",
       "name": "Parse Request with Groq",
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.4,
-      "position": [880, 140]
+      "position": [
+        880,
+        140
+      ]
     },
     {
       "parameters": {
-        "jsCode": "let raw = $input.first().json.text || JSON.stringify($input.first().json);\ntry {\n  // Clean potential code fences\n  raw = raw.replace(/```json/g, '').replace(/```/g, '').trim();\n  const parsed = JSON.parse(raw);\n  return [{ json: parsed }];\n} catch (e) {\n  return [{\n    json: {\n      intent: 'clarify_question',\n      clarification_question: 'Could you rephrase your request? I could not parse the requested action structure.',\n      summary: 'Parse error: fallback to clarification.',\n      parameters: { raw_output: raw }\n    }\n  }];\n}"
+        "jsCode": "const raw = $input.first().json.text;\nif (typeof raw !== 'string') throw new Error('Model response must be JSON text.');\nlet parsed;\ntry { parsed = JSON.parse(raw); } catch { throw new Error('Model response was not valid JSON.'); }\nif (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Response must be an object.');\nif (Object.keys(parsed).some(key => !['intent','parameters','summary','clarification_question'].includes(key))) throw new Error('Response contains unsupported fields.');\nconst allowed = new Set(['log_activity','create_task','checkin_habit','query_summary','clarify_question']);\nif (!allowed.has(parsed.intent)) throw new Error('Unsupported intent.');\nif (!parsed.parameters || typeof parsed.parameters !== 'object' || Array.isArray(parsed.parameters)) throw new Error('Parameters must be an object.');\nconst p = parsed.parameters;\nconst parameterKeys = { log_activity: ['title','category','duration_minutes','date','notes','timezone'], create_task: ['title','priority','due_date','category','estimated_minutes'], checkin_habit: ['habit_name','checkin_date'], query_summary: ['date_range','category_filter','topic'], clarify_question: [] };\nif (Object.keys(p).some(key => !parameterKeys[parsed.intent].includes(key))) throw new Error('Parameters contain unsupported fields.');\nconst date = value => typeof value === 'string' && /^\\d{4}-\\d{2}-\\d{2}$/.test(value) && !Number.isNaN(Date.parse(value));\nconst categories = ['work','personal_project','learning','workout','habit','admin','creative','rest','custom'];\nif (parsed.intent === 'log_activity' && (typeof p.title !== 'string' || !p.title.trim() || p.title.length > 300 || !categories.includes(p.category) || !Number.isInteger(p.duration_minutes) || p.duration_minutes < 1 || p.duration_minutes > 1440 || !date(p.date) || (p.notes !== undefined && typeof p.notes !== 'string') || (p.timezone !== undefined && typeof p.timezone !== 'string'))) throw new Error('Invalid activity schema.');\nif (parsed.intent === 'create_task' && (typeof p.title !== 'string' || !p.title.trim() || p.title.length > 300 || (p.priority !== undefined && !['low','medium','high','urgent'].includes(p.priority)) || (p.category !== undefined && !categories.includes(p.category)) || (p.due_date != null && !date(p.due_date)) || (p.estimated_minutes !== undefined && (!Number.isInteger(p.estimated_minutes) || p.estimated_minutes < 0 || p.estimated_minutes > 100000)))) throw new Error('Invalid task schema.');\nif (parsed.intent === 'checkin_habit' && (typeof p.habit_name !== 'string' || !p.habit_name.trim() || p.habit_name.length > 200 || !date(p.checkin_date))) throw new Error('Invalid habit schema.');\nif (parsed.intent === 'query_summary' && ((p.date_range !== undefined && !['today','week','month','custom'].includes(p.date_range)) || (p.category_filter !== undefined && p.category_filter !== 'all' && !categories.includes(p.category_filter)) || (p.topic !== undefined && (typeof p.topic !== 'string' || p.topic.length > 300)))) throw new Error('Invalid report schema.');\nif (parsed.intent === 'clarify_question' && (typeof parsed.clarification_question !== 'string' || !parsed.clarification_question.trim() || parsed.clarification_question.length > 500)) throw new Error('Invalid clarification schema.');\nconst request = $('Webhook: Receive Request').first().json.body;\nreturn [{ json: { intent: parsed.intent, parameters: p, summary: typeof parsed.summary === 'string' ? parsed.summary.slice(0, 500) : 'Review the parsed request.', clarification_question: typeof parsed.clarification_question === 'string' ? parsed.clarification_question.slice(0, 500) : null, requestId: request.idempotencyKey } }];"
       },
       "id": "node-validate-schema",
-      "name": "Validate Structured JSON",
+      "name": "Strict Schema Validation",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1100, 140]
-    },
-    {
-      "parameters": {
-        "jsCode": "const body = $('Webhook: Receive Client Action').first().json.body;\nreturn [{\n  json: {\n    status: 'success',\n    execution_status: 'executed',\n    userId: body.userId,\n    action: body.confirmedAction,\n    summary: 'Mutation confirmed and executed safely.',\n    timestamp: new Date().toISOString()\n  }\n}];"
-      },
-      "id": "node-execute-confirmed",
-      "name": "Execute Authorized Mutation",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [880, -20]
+      "position": [
+        1120,
+        140
+      ]
     },
     {
       "parameters": {
@@ -122,61 +70,17 @@
           "responseCode": 200
         }
       },
-      "id": "node-respond-success",
-      "name": "Return Success Response",
+      "id": "node-respond-preview",
+      "name": "Return Validated Preview",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [1320, 80]
+      "position": [
+        1360,
+        140
+      ]
     }
   ],
   "connections": {
-    "Webhook: Receive Client Action": {
-      "main": [
-        [
-          {
-            "node": "Validate Secret",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Validate Secret": {
-      "main": [
-        [
-          {
-            "node": "Is Confirmed Mutation?",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Return 401 Unauthorized",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Is Confirmed Mutation?": {
-      "main": [
-        [
-          {
-            "node": "Execute Authorized Mutation",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Parse Request with Groq",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Groq Chat Model": {
       "ai_languageModel": [
         [
@@ -192,31 +96,31 @@
       "main": [
         [
           {
-            "node": "Validate Structured JSON",
+            "node": "Strict Schema Validation",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Validate Structured JSON": {
+    "Strict Schema Validation": {
       "main": [
         [
           {
-            "node": "Return Success Response",
+            "node": "Return Validated Preview",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Execute Authorized Mutation": {
+    "Webhook: Receive Request": {
       "main": [
         [
           {
-            "node": "Return Success Response",
-            "type": "main",
-            "index": 0
+            "node": "Parse Request with Groq",
+            "index": 0,
+            "type": "main"
           }
         ]
       ]
@@ -224,5 +128,6 @@
   },
   "settings": {
     "executionOrder": "v1"
-  }
+  },
+  "active": false
 }

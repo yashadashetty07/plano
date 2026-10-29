@@ -152,7 +152,7 @@ class _TasksProjectsScreenState extends State<TasksProjectsScreen> with SingleTi
 
                 final task = PlanoTask(
                   id: existing?.id ?? _uuid.v4(),
-                  userId: provider.profile?.id ?? 'local-user-001',
+                  userId: provider.profile!.id,
                   projectId: selectedProjectId,
                   title: title,
                   description: descController.text.trim().isEmpty ? null : descController.text.trim(),
@@ -218,7 +218,7 @@ class _TasksProjectsScreenState extends State<TasksProjectsScreen> with SingleTi
 
               final project = Project(
                 id: _uuid.v4(),
-                userId: provider.profile?.id ?? 'local-user-001',
+                  userId: provider.profile!.id,
                 name: name,
                 description: descController.text.trim().isEmpty ? null : descController.text.trim(),
                 category: catController.text.trim(),

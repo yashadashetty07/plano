@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_provider.dart';
 import '../services/health_connect_service.dart';
+import '../services/supabase_service.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -53,6 +54,17 @@ class SettingsScreen extends StatelessWidget {
                   ),
                 ],
               ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.logout),
+              title: const Text('Sign out'),
+              onTap: () async {
+                provider.clearUserData();
+                await SupabaseService().signOut();
+              },
             ),
           ),
           const SizedBox(height: 16),

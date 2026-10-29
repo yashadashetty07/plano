@@ -1,5 +1,5 @@
-import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/assistant_action.dart';
 import 'supabase_service.dart';
 
@@ -23,18 +23,49 @@ class AssistantService {
       );
     }
 
-    // If Supabase Edge Function is configured, attempt remote call
     final supabase = SupabaseService();
-    if (supabase.isConfigured && supabase.currentUser != null) {
-      try {
-        // functions.invoke('assistant_action', body: {...})
-      } catch (e) {
-        debugPrint('Remote assistant invoke error: $e. Falling back to local schema parser.');
-      }
+    if (supabase.isConfigured) {
+      if (supabase.currentUser == null) throw StateError('Sign in before using the assistant.');
+      final idempotencyKey = _uuid.v4();
+      final result = await Supabase.instance.client.functions.invoke(
+        'assistant_action',
+        body: {
+          'prompt': cleanPrompt,
+          'timezone': userTimezone,
+          'idempotencyKey': idempotencyKey,
+          'previewOnly': previewOnly,
+        },
+      );
+      if (result.data is! Map) throw const FormatException('Assistant returned an invalid response.');
+      return AssistantAction.fromJson(
+        Map<String, dynamic>.from(result.data as Map)
+          ..putIfAbsent('user_prompt', () => cleanPrompt),
+      );
     }
 
-    // Client-side structured schema validation parser
+    // Local parser is retained for unit tests and offline previews only.
     return _parsePromptLocally(cleanPrompt, userTimezone);
+  }
+
+  Future<void> confirmAction(AssistantAction action) async {
+    final supabase = SupabaseService();
+    if (!supabase.isConfigured || supabase.currentUser == null) {
+      throw StateError('Sign in to Plano before confirming an assistant action.');
+    }
+    final result = await Supabase.instance.client.functions.invoke(
+      'assistant_action',
+      body: {
+        'confirmedAction': {
+          'id': action.id,
+          'intent': action.intent,
+          'parameters': action.parameters,
+        },
+      },
+    );
+    final data = result.data;
+    if (data is! Map || data['status'] != 'success' || data['verified'] != true) {
+      throw const FormatException('The assistant action was not verified as saved.');
+    }
   }
 
   AssistantAction _parsePromptLocally(String prompt, String timezone) {
@@ -92,7 +123,7 @@ class AssistantService {
           'due_date': dueDate?.toIso8601String().split('T').first,
           'category': 'work',
         },
-        requiresConfirmation: false,
+        requiresConfirmation: true,
         summary: 'Create task "$title"${dueDate != null ? " due ${dueDate.toIso8601String().split('T').first}" : ""}',
         timestamp: now,
       );
@@ -144,7 +175,7 @@ class AssistantService {
           'date': today.toIso8601String().split('T').first,
           'timezone': timezone,
         },
-        requiresConfirmation: false,
+        requiresConfirmation: true,
         summary: 'Log $durationMinutes min $category activity: "$prompt"',
         timestamp: now,
       );

@@ -6,16 +6,17 @@ Plano is a minimal, fast productivity and activity-tracking hub for Android and 
 
 | Feature / Domain | Verification Status | Notes |
 | :--- | :--- | :--- |
-| **Plano Brand & Assets** | **Implemented & Verified** | Original geometric monogram "P" vector SVGs, light/dark/monochrome variants, adaptive Android icon XMLs, PWA icons, web favicons generated via `generate_brand_assets.py`. |
-| **Material 3 App Shell** | **Implemented & Verified** | Responsive layout supporting mobile (`NavigationBar`) and desktop/web (`NavigationRail`), light & dark themes, accessible contrast, empty & error states. Verified via 6 automated unit & smoke tests and release web compilation. |
-| **Dashboard** | **Implemented & Verified** | Today's scheduled tasks, completed tasks, time logged, habit check-in circles, available health summaries, weekly category breakdown. Distinguishes unavailable health data from zero. |
-| **Flexible Activity Logging** | **Implemented & Verified** | Log work, personal projects, learning, workouts, habits, errands, creative, and rest. Duration, tags, notes, dates, timezone preservation, and project associations. Search and category filtering. |
-| **Tasks & Projects** | **Implemented & Verified** | Task status (todo, completed, overdue), priority flags (low, medium, high, urgent), due dates, estimates, project grouping, and progress indicators. |
-| **Habits & Learning** | **Implemented & Verified** | Frequency schedules (daily, weekdays, weekends), visual 7-day check-in history, timezone-aware streak tracking. Study sessions with duration, resource links, and certification/skill goals. |
-| **Deterministic Reports** | **Implemented & Verified** | Date-range filters (7 days, 30 days, month, custom), category time breakdowns, completion percentages, habit consistency %, and one-click CSV export. Totals calculated via deterministic logic. |
-| **Natural-Language Assistant** | **Implemented & Verified** (Local parser) / **Implemented but not externally configured** (Remote n8n+Groq) | Parsed into typed, validated actions (`log_activity`, `create_task`, `checkin_habit`, `query_summary`). Ambiguous inputs prompt for clarification. Destructive mutations require explicit confirmation preview. Trusted Supabase Edge Function (`assistant_action`) and n8n workflow definition (`plano_assistant_workflow.json`) included in repo. |
-| **Android Health Connect** | **Implemented & Verified** (Adapter & Manifest) / **Partially implemented** (Physical Samsung device end-to-end sync) | Method channel integration (`com.plano.app/health_connect`) with SDK availability checks, permission rationale intents, and aggregate queries for steps and workout durations. Deletion of imported data supported. Full end-to-end synchronization requires testing on a physical Android device with Health Connect installed. |
-| **Database & RLS Isolation** | **Implemented & Verified** | Full PostgreSQL migration (`20261030000001_initial_plano_schema.sql`) covering profiles, workspaces, projects, tasks, activity logs, habits, checkins, learning, health summaries, and audit logs. All tables have RLS enabled. Health data is strictly owner-only. Isolation verification test provided in `supabase/tests/rls_isolation_test.sql`. |
+| **Plano Brand & Assets** | **Implemented; not independently verified** | SVG logos, app icons, PWA icons, and favicons are present. |
+| **Material 3 App Shell** | **Implemented; build not verified** | Responsive mobile and desktop/web layouts, light & dark themes, empty and error states. |
+| **Dashboard** | **Implemented; not end-to-end verified** | UI reads dashboard summaries from the signed-in user's loaded records. |
+| **Flexible Activity Logging** | **Implemented; not end-to-end verified** | Activity forms, category filters, and search are present. |
+| **Tasks & Projects** | **Implemented; not end-to-end verified** | Task and project screens and data models are present. |
+| **Habits & Learning** | **Implemented; not end-to-end verified** | Habit, check-in, and learning screens and data models are present. |
+| **Deterministic Reports** | **Implemented; tests pending** | Report calculations and CSV export are implemented in application logic. |
+| **Authentication** | **Implemented but not end-to-end verified** | Email/password sign-up and sign-in require client configuration. |
+| **Natural-Language Assistant** | **Not operational** | Remote Flutter invocation and safe verified persistence must be completed before claiming assistant mutations work. |
+| **Android Health Connect** | **Implemented but unverified** | Native channel and aggregate queries exist. Permission grant flow and physical-device verification remain outstanding. |
+| **Database & RLS Isolation** | **Implemented but not deployed or verified** | Migration and RLS test script are in the repository. Run the reviewed migration in the intended Supabase project and execute the isolation test before relying on it. |
 
 ---
 
@@ -34,35 +35,25 @@ Plano is a minimal, fast productivity and activity-tracking hub for Android and 
 [Groq LLM Inference (llama-3.3-70b-versatile)]
        │ (Strict Typed JSON Schema Output)
        ▼
-[Client Approval & Tenant-Scoped RLS Mutation]
+[Client Confirmation → Edge Function user-JWT RLS write → read-back verification]
 ```
 
 ---
 
 ## 3. Setup & Environment Variables
 
-Copy `.env.example` to `.env` and provide your credentials:
+Flutter does not load `.env` files. Enter only your project URL and **publishable** key in `config/supabase.dev.json`, replacing the two placeholder values. This file is ignored by Git. The tracked `config/supabase.dev.example.json` is a template, not a runtime config.
 
-```bash
-# Supabase Configuration
-SUPABASE_URL=https://your-project-ref.supabase.co
-SUPABASE_ANON_KEY=your-supabase-publishable-key
-SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
-
-# Trusted Backend & n8n Bridge
-N8N_WEBHOOK_URL=https://your-n8n.example.com/webhook/plano-assistant
-N8N_WEBHOOK_SECRET=your-32-char-random-secret
-
-# Groq LLM Inference
-GROQ_API_KEY=gsk_your_groq_api_key
+```powershell
+flutter run --dart-define-from-file=config/supabase.dev.json
 ```
 
-### Database Migrations
-Apply the PostgreSQL migration using the Supabase CLI:
-```bash
-supabase db push
-# Or run supabase/migrations/20261030000001_initial_plano_schema.sql directly in the Supabase SQL Editor
-```
+For web and Android builds, pass the same option to `flutter build web --release` or `flutter build apk --release`. The app reads `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` via `String.fromEnvironment` in `lib/main.dart`. Missing or placeholder values show a configuration screen; they do not load seeded demo records. Sign-in and sign-up use Supabase Auth.
+
+**Never put `SUPABASE_SECRET_KEY` in this file.** The current Edge Function uses the caller's verified JWT and user-scoped database access; it does not need the Supabase secret key or `SUPABASE_JWKS_URL`. Do not add either to the client. After n8n exists, store `GROQ_API_KEY` as an n8n Groq credential, and store `N8N_WEBHOOK_URL` and `N8N_WEBHOOK_SECRET` in Supabase Edge Function secrets. Keep the Supabase secret key unused unless a reviewed server-only operation specifically requires it.
+
+### Database Migration
+The migration at `supabase/migrations/20261030000001_initial_plano_schema.sql` has not been applied. Review it before running it in the Supabase SQL Editor or with the Supabase CLI against the intended project.
 
 ### n8n Automation Setup
 1. In n8n, go to **Workflows > Import from File** and import `n8n/workflows/plano_assistant_workflow.json`.
@@ -80,19 +71,19 @@ supabase db push
 
 ### Running Tests
 All targeted unit, analytics, and schema tests run via Flutter test:
-```bash
-flutter test
+```powershell
+flutter test --dart-define-from-file=config/supabase.dev.json
 ```
 
 ### Building for Responsive Web
-```bash
-flutter build web --release
+```powershell
+flutter build web --release --dart-define-from-file=config/supabase.dev.json
 ```
 The compiled output is located in `build/web/`.
 
 ### Building for Android
-```bash
-flutter build apk --debug
+```powershell
+flutter build apk --release --dart-define-from-file=config/supabase.dev.json
 ```
 
 ---

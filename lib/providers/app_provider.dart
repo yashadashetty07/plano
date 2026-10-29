@@ -27,6 +27,8 @@ class AppProvider with ChangeNotifier {
 
   bool _isLoading = false;
   bool get isLoading => _isLoading;
+  bool _hasLoadedUserData = false;
+  bool get hasLoadedUserData => _hasLoadedUserData;
 
   String? _errorMessage;
   String? get errorMessage => _errorMessage;
@@ -132,6 +134,7 @@ class AppProvider with ChangeNotifier {
       _errorMessage = 'Error loading data: $e';
     } finally {
       _isLoading = false;
+      _hasLoadedUserData = true;
       notifyListeners();
     }
   }
@@ -293,6 +296,21 @@ class AppProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  void clearUserData() {
+    _profile = null;
+    _projects = [];
+    _tasks = [];
+    _activities = [];
+    _habits = [];
+    _checkins = [];
+    _learningSessions = [];
+    _healthSummaries = [];
+    _healthIntegration = null;
+    _assistantHistory.clear();
+    _hasLoadedUserData = false;
+    notifyListeners();
+  }
+
   // Natural Language Assistant Flow
   Future<void> submitAssistantPrompt(String prompt) async {
     _isLoading = true;
@@ -307,10 +325,7 @@ class AppProvider with ChangeNotifier {
 
       _assistantHistory.add(action);
 
-      // If action does not require confirmation, execute immediately
-      if (!action.requiresConfirmation && action.intent != 'clarify_question') {
-        await executeAssistantAction(action);
-      }
+      if (action.intent == 'query_summary') _selectedNavigationIndex = 4;
     } catch (e) {
       _errorMessage = 'Assistant error: $e';
     } finally {
@@ -320,58 +335,29 @@ class AppProvider with ChangeNotifier {
   }
 
   Future<void> executeAssistantAction(AssistantAction action) async {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-
-    switch (action.intent) {
-      case 'create_task':
-        final task = PlanoTask(
-          id: _uuid.v4(),
-          userId: _db.currentUserId,
-          title: action.parameters['title'] ?? 'New Task',
-          priority: action.parameters['priority'] ?? 'medium',
-          dueDate: action.parameters['due_date'] != null
-              ? DateTime.tryParse(action.parameters['due_date'])
-              : null,
-          category: action.parameters['category'] ?? 'work',
-          createdAt: now,
-          updatedAt: now,
-        );
-        await addTask(task);
-        break;
-
-      case 'log_activity':
-        final act = ActivityLog(
-          id: _uuid.v4(),
-          userId: _db.currentUserId,
-          title: action.parameters['title'] ?? 'Logged Activity',
-          category: action.parameters['category'] ?? 'work',
-          durationMinutes: (action.parameters['duration_minutes'] as num?)?.toInt() ?? 30,
-          date: action.parameters['date'] != null
-              ? DateTime.parse(action.parameters['date'])
-              : today,
-          timezone: _profile?.timezone ?? 'UTC',
-          source: 'assistant',
-          createdAt: now,
-          updatedAt: now,
-        );
-        await addActivity(act);
-        break;
-
-      case 'checkin_habit':
-        if (_habits.isNotEmpty) {
-          await toggleHabitCheckin(_habits.first.id, today);
-        }
-        break;
-    }
-
     final idx = _assistantHistory.indexWhere((a) => a.id == action.id);
-    if (idx != -1) {
-      _assistantHistory[idx] = action.copyWith(
-        isConfirmed: true,
-        executionStatus: 'executed',
-      );
+    try {
+      await _assistantService.confirmAction(action);
+      await loadAllData();
+      if (idx != -1) {
+        _assistantHistory[idx] = action.copyWith(
+          isConfirmed: true,
+          executionStatus: 'executed',
+        );
+      }
+    } catch (e) {
+      _errorMessage = 'Assistant action was not verified as saved: $e';
+      if (idx != -1) {
+        _assistantHistory[idx] = action.copyWith(executionStatus: 'failed');
+      }
     }
+    notifyListeners();
+  }
+
+  void cancelAssistantAction(AssistantAction action) {
+    final idx = _assistantHistory.indexWhere((a) => a.id == action.id);
+    if (idx == -1) return;
+    _assistantHistory[idx] = action.copyWith(executionStatus: 'cancelled');
     notifyListeners();
   }
 

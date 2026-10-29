@@ -180,7 +180,7 @@ class _ActivitiesScreenState extends State<ActivitiesScreen> {
 
                 final log = ActivityLog(
                   id: existing?.id ?? _uuid.v4(),
-                  userId: provider.profile?.id ?? 'local-user-001',
+                  userId: provider.profile!.id,
                   projectId: selectedProjectId,
                   title: title,
                   category: selectedCategory,

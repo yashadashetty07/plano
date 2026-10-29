@@ -8,20 +8,19 @@ import 'package:plano/services/assistant_service.dart';
 
 void main() {
   group('Plano App Smoke Tests', () {
-    testWidgets('App launches and renders Dashboard', (WidgetTester tester) async {
+    testWidgets('App without credentials requests Supabase configuration', (WidgetTester tester) async {
       await tester.pumpWidget(
         MultiProvider(
           providers: [
-            ChangeNotifierProvider(create: (_) => AppProvider()..loadAllData()),
+            ChangeNotifierProvider(create: (_) => AppProvider()),
           ],
           child: const PlanoApp(),
         ),
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Dashboard'), findsWidgets);
-      expect(find.text("Today's Tasks"), findsOneWidget);
-      expect(find.text('Time Logged'), findsOneWidget);
+      expect(find.textContaining('SUPABASE_URL'), findsOneWidget);
+      expect(find.textContaining('config/supabase.dev.json'), findsOneWidget);
     });
   });
 
@@ -129,7 +128,7 @@ void main() {
       expect(action.intent, 'log_activity');
       expect(action.parameters['duration_minutes'], 45);
       expect(action.parameters['category'], 'learning');
-      expect(action.requiresConfirmation, isFalse);
+      expect(action.requiresConfirmation, isTrue);
     });
 
     test('Parses task creation into typed task intent', () async {
