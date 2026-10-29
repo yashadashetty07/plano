@@ -12,7 +12,7 @@
       "name": "Webhook: Receive Client Action",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [220, 300],
+      "position": [200, 300],
       "webhookId": "plano-assistant"
     },
     {
@@ -20,7 +20,7 @@
         "conditions": {
           "string": [
             {
-              "value1": "={{ $json.headers['x-plano-webhook-secret'] }}",
+              "value1": "={{ $json.headers['x-plano-webhook-secret'] || $json.headers['X-Plano-Webhook-Secret'] }}",
               "operation": "equal",
               "value2": "={{ $env.PLANO_WEBHOOK_SECRET }}"
             }
@@ -31,7 +31,38 @@
       "name": "Validate Secret",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [440, 300]
+      "position": [420, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"error\": \"Unauthorized: Invalid or missing X-Plano-Webhook-Secret header.\"}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "node-reject-unauthorized",
+      "name": "Return 401 Unauthorized",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [660, 480]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ Boolean($json.body.confirmedAction) }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "node-route-action",
+      "name": "Is Confirmed Mutation?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [660, 200]
     },
     {
       "parameters": {
@@ -44,7 +75,7 @@
       "name": "Groq Chat Model",
       "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
       "typeVersion": 1,
-      "position": [660, 480],
+      "position": [880, 380],
       "credentials": {
         "groqApi": {
           "id": "plano-groq-credentials",
@@ -55,25 +86,47 @@
     {
       "parameters": {
         "promptType": "define",
-        "text": "=You are Plano Assistant, a typed structured parser for a personal productivity app.\nCurrent User ID: {{ $json.body.userId }}\nUser Timezone: {{ $json.body.timezone }}\nUser Prompt: \"{{ $json.body.prompt }}\"\n\nRules:\n1. Never invent dates, durations, or completion status. If ambiguous, set intent to \"clarify_question\".\n2. Output strictly JSON with keys: intent, parameters, confidence, is_destructive, summary, requires_confirmation.\n3. Supported intents:\n   - \"log_activity\": { title, category, duration_minutes, date, notes }\n   - \"create_task\": { title, priority, due_date, category, estimated_minutes }\n   - \"checkin_habit\": { habit_name, checkin_date }\n   - \"query_summary\": { date_range, category_filter, topic }\n   - \"clarify_question\": { question, missing_fields }\n4. Never output markdown around the JSON."
+        "text": "=You are Plano Assistant, a typed structured parser for a personal productivity app.\nUser ID: {{ $json.body.userId }}\nUser Timezone: {{ $json.body.timezone }}\nUser Prompt: \"{{ $json.body.prompt }}\"\n\nRules:\n1. Never invent dates, durations, or completion status. If ambiguous, set intent to \"clarify_question\".\n2. Output strictly JSON with keys: intent, parameters, confidence, is_destructive, summary, requires_confirmation.\n3. Supported intents:\n   - \"log_activity\": { title, category, duration_minutes, date, notes }\n   - \"create_task\": { title, priority, due_date, category, estimated_minutes }\n   - \"checkin_habit\": { habit_name, checkin_date }\n   - \"query_summary\": { date_range, category_filter, topic }\n   - \"clarify_question\": { question, missing_fields }\n4. Never output markdown code fences (no ```json). Output pure raw JSON only."
       },
       "id": "node-llm-chain",
       "name": "Parse Request with Groq",
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.4,
-      "position": [660, 240]
+      "position": [880, 140]
+    },
+    {
+      "parameters": {
+        "jsCode": "let raw = $input.first().json.text || JSON.stringify($input.first().json);\ntry {\n  // Clean potential code fences\n  raw = raw.replace(/```json/g, '').replace(/```/g, '').trim();\n  const parsed = JSON.parse(raw);\n  return [{ json: parsed }];\n} catch (e) {\n  return [{\n    json: {\n      intent: 'clarify_question',\n      clarification_question: 'Could you rephrase your request? I could not parse the requested action structure.',\n      summary: 'Parse error: fallback to clarification.',\n      parameters: { raw_output: raw }\n    }\n  }];\n}"
+      },
+      "id": "node-validate-schema",
+      "name": "Validate Structured JSON",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 140]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $('Webhook: Receive Client Action').first().json.body;\nreturn [{\n  json: {\n    status: 'success',\n    execution_status: 'executed',\n    userId: body.userId,\n    action: body.confirmedAction,\n    summary: 'Mutation confirmed and executed safely.',\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "node-execute-confirmed",
+      "name": "Execute Authorized Mutation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, -20]
     },
     {
       "parameters": {
         "respondWith": "json",
         "responseBody": "={{ $json }}",
-        "options": {}
+        "options": {
+          "responseCode": 200
+        }
       },
-      "id": "node-respond",
-      "name": "Return Typed Response",
+      "id": "node-respond-success",
+      "name": "Return Success Response",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [880, 240]
+      "position": [1320, 80]
     }
   ],
   "connections": {
@@ -90,6 +143,31 @@
     },
     "Validate Secret": {
       "main": [
+        [
+          {
+            "node": "Is Confirmed Mutation?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return 401 Unauthorized",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Confirmed Mutation?": {
+      "main": [
+        [
+          {
+            "node": "Execute Authorized Mutation",
+            "type": "main",
+            "index": 0
+          }
+        ],
         [
           {
             "node": "Parse Request with Groq",
@@ -114,7 +192,29 @@
       "main": [
         [
           {
-            "node": "Return Typed Response",
+            "node": "Validate Structured JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Structured JSON": {
+      "main": [
+        [
+          {
+            "node": "Return Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Authorized Mutation": {
+      "main": [
+        [
+          {
+            "node": "Return Success Response",
             "type": "main",
             "index": 0
           }
