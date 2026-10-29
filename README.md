@@ -14,9 +14,9 @@ Plano is a minimal, fast productivity and activity-tracking hub for Android and 
 | **Habits & Learning** | **Implemented; not end-to-end verified** | Habit, check-in, and learning screens and data models are present. |
 | **Deterministic Reports** | **Implemented; tests pending** | Report calculations and CSV export are implemented in application logic. |
 | **Authentication** | **Implemented but not end-to-end verified** | Email/password sign-up and sign-in require client configuration. |
-| **Natural-Language Assistant** | **Not operational** | Remote Flutter invocation and safe verified persistence must be completed before claiming assistant mutations work. |
+| **Natural-Language Assistant** | **Not operational yet** | Supabase Edge Function is deployed; connect n8n Cloud and Groq, then verify a live preview and a confirmed persisted action. |
 | **Android Health Connect** | **Implemented but unverified** | Native channel and aggregate queries exist. Permission grant flow and physical-device verification remain outstanding. |
-| **Database & RLS Isolation** | **Implemented but not deployed or verified** | Migration and RLS test script are in the repository. Run the reviewed migration in the intended Supabase project and execute the isolation test before relying on it. |
+| **Database & RLS Isolation** | **Schema deployed; isolation test pending** | Tables and RLS policies are deployed to the `plano` Supabase project. The rollback-only isolation test still needs two test users. |
 
 ---
 
@@ -52,18 +52,17 @@ For web and Android builds, pass the same option to `flutter build web --release
 
 **Never put `SUPABASE_SECRET_KEY` in this file.** The current Edge Function uses the caller's verified JWT and user-scoped database access; it does not need the Supabase secret key or `SUPABASE_JWKS_URL`. Do not add either to the client. After n8n exists, store `GROQ_API_KEY` as an n8n Groq credential, and store `N8N_WEBHOOK_URL` and `N8N_WEBHOOK_SECRET` in Supabase Edge Function secrets. Keep the Supabase secret key unused unless a reviewed server-only operation specifically requires it.
 
+### Public Web Deployment
+The repository deploys Flutter Web to GitHub Pages from `main` using `.github/workflows/deploy-pages.yml`. The workflow reads `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` from GitHub Actions repository variables and builds the project-site path `/plano/`. The client URL and publishable key are public by design; never add the Supabase secret key or Groq API key to GitHub variables or the Flutter build. The public URL is `https://yashadashetty07.github.io/plano/` after the first successful deployment.
+
 ### Database Migration
-The migration at `supabase/migrations/20261030000001_initial_plano_schema.sql` has not been applied. Review it before running it in the Supabase SQL Editor or with the Supabase CLI against the intended project.
+The initial schema and signup-trigger permission fix have been applied to the `plano` Supabase project. The RLS isolation script is in `supabase/tests/rls_isolation_test.sql`; it requires two distinct test user UUIDs and rolls back its fixtures.
 
 ### n8n Automation Setup
-1. In n8n, go to **Workflows > Import from File** and import `n8n/workflows/plano_assistant_workflow.json`.
-2. Connect your Groq API credentials.
-3. Configure `PLANO_WEBHOOK_SECRET` in n8n environment variables.
-4. Set the webhook URL and secret in Supabase Edge Function secrets:
-   ```bash
-   supabase secrets set N8N_WEBHOOK_URL="https://your-n8n.example.com/webhook/plano-assistant"
-   supabase secrets set N8N_WEBHOOK_SECRET="your-32-char-random-secret"
-   ```
+1. Create an n8n Cloud instance and import `n8n/workflows/plano_assistant_workflow.json`.
+2. Create a Header Auth credential on the webhook using header name `X-Plano-Webhook-Secret` and create/select a Groq credential for **Groq Chat Model**.
+3. Activate the workflow and copy its production webhook URL.
+4. In Supabase Dashboard → **Edge Functions → Secrets**, set `N8N_WEBHOOK_URL` and `N8N_WEBHOOK_SECRET`. Use the same random secret in the n8n Header Auth credential. Do not store either the Groq key or Supabase secret key in this repository.
 
 ---
 
