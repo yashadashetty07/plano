@@ -1,0 +1,128 @@
+{
+  "name": "Plano AI Assistant Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "plano-assistant",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "node-webhook",
+      "name": "Webhook: Receive Client Action",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [220, 300],
+      "webhookId": "plano-assistant"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.headers['x-plano-webhook-secret'] }}",
+              "operation": "equal",
+              "value2": "={{ $env.PLANO_WEBHOOK_SECRET }}"
+            }
+          ]
+        }
+      },
+      "id": "node-auth-check",
+      "name": "Validate Secret",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "model": "llama-3.3-70b-versatile",
+        "options": {
+          "temperature": 0.1
+        }
+      },
+      "id": "node-groq-model",
+      "name": "Groq Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [660, 480],
+      "credentials": {
+        "groqApi": {
+          "id": "plano-groq-credentials",
+          "name": "Groq Plano Production"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are Plano Assistant, a typed structured parser for a personal productivity app.\nCurrent User ID: {{ $json.body.userId }}\nUser Timezone: {{ $json.body.timezone }}\nUser Prompt: \"{{ $json.body.prompt }}\"\n\nRules:\n1. Never invent dates, durations, or completion status. If ambiguous, set intent to \"clarify_question\".\n2. Output strictly JSON with keys: intent, parameters, confidence, is_destructive, summary, requires_confirmation.\n3. Supported intents:\n   - \"log_activity\": { title, category, duration_minutes, date, notes }\n   - \"create_task\": { title, priority, due_date, category, estimated_minutes }\n   - \"checkin_habit\": { habit_name, checkin_date }\n   - \"query_summary\": { date_range, category_filter, topic }\n   - \"clarify_question\": { question, missing_fields }\n4. Never output markdown around the JSON."
+      },
+      "id": "node-llm-chain",
+      "name": "Parse Request with Groq",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.4,
+      "position": [660, 240]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "node-respond",
+      "name": "Return Typed Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [880, 240]
+    }
+  ],
+  "connections": {
+    "Webhook: Receive Client Action": {
+      "main": [
+        [
+          {
+            "node": "Validate Secret",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Secret": {
+      "main": [
+        [
+          {
+            "node": "Parse Request with Groq",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Parse Request with Groq",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Request with Groq": {
+      "main": [
+        [
+          {
+            "node": "Return Typed Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

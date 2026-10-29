@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Stylized Plano P Emblem -->
+    <path
+        android:pathData="M 36,72 L 36,36 C 36,25.5 44.5,17 55,17 C 65.5,17 74,25.5 74,36 C 74,46.5 65.5,55 55,55 L 36,55"
+        android:strokeWidth="8"
+        android:strokeColor="#14B8A6"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"/>
+    <!-- Focus Aperture -->
+    <path
+        android:pathData="M 55,36 m -5,0 a 5,5 0 1,0 10,0 a 5,5 0 1,0 -10,0"
+        android:fillColor="#38BDF8"/>
+    <!-- Trajectory Dot -->
+    <path
+        android:pathData="M 55,67 L 70,67"
+        android:strokeWidth="5"
+        android:strokeColor="#6366F1"
+        android:strokeLineCap="round"/>
+</vector>

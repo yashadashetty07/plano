@@ -1,0 +1,31 @@
+name: plano
+description: "Plano — Personal productivity and activity-tracking app."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.1
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  supabase_flutter: ^2.8.4
+  provider: ^6.1.2
+  intl: ^0.19.0
+  uuid: ^4.5.1
+  csv: ^6.0.0
+  shared_preferences: ^2.3.5
+  flutter_svg: ^2.0.17
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/branding/
+    - assets/icons/
